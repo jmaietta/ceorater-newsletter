@@ -18,6 +18,21 @@ const { transformArticle, extractSubject } = require('./transform');
 const app = express();
 app.use(express.json());
 
+// CORS - allow requests from ceorater.com
+app.use((req, res, next) => {
+  const allowedOrigins = ['https://www.ceorater.com', 'https://ceorater.com'];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 // Initialize Firebase
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
 if (serviceAccount.project_id) {
