@@ -164,7 +164,31 @@ app.post('/render-webhook', async (req, res) => {
       return res.status(401).send('Invalid secret');
     }
     
-    console.log('Render webhook: Deploy complete, processing queued articles...');
+    // Check if this is the CEORater static site deploy
+    const payload = req.body;
+    const serviceName = payload?.data?.serviceName;
+    const status = payload?.data?.status;
+    const eventType = payload?.type;
+    
+    console.log(`Render webhook received: service=${serviceName}, type=${eventType}, status=${status}`);
+    
+    // Only process successful deploys from CEORater static site
+    if (serviceName !== 'CEORater') {
+      console.log(`Ignoring deploy from ${serviceName} (not CEORater)`);
+      return res.status(200).send('Ignored - not CEORater');
+    }
+    
+    if (eventType !== 'deploy_ended') {
+      console.log(`Ignoring event type ${eventType} (not deploy_ended)`);
+      return res.status(200).send('Ignored - not deploy_ended');
+    }
+    
+    if (status !== 'succeeded') {
+      console.log(`Ignoring deploy with status ${status} (not succeeded)`);
+      return res.status(200).send('Ignored - deploy not succeeded');
+    }
+    
+    console.log('CEORater deploy succeeded! Processing queued articles...');
     
     // Get all queued articles
     const queuedSnapshot = await db.collection('queued_articles')
