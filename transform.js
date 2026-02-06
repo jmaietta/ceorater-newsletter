@@ -69,22 +69,43 @@ function transformArticle(html, articlePath) {
     }
   });
   
-  // Step 7: Remove elements that don't work in email
+  // Step 7: Convert YouTube iframes to email-safe clickable thumbnails
+  article.find('iframe').each((i, el) => {
+    const src = $(el).attr('src') || '';
+    const match = src.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
+    if (match) {
+      const videoId = match[1];
+      const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const thumbUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+      const fallback = `
+        <div style="margin: 24px 0; text-align: center;">
+          <a href="${watchUrl}" target="_blank" style="text-decoration: none; display: inline-block;">
+            <img src="${thumbUrl}" alt="Watch video" style="width: 100%; max-width: 600px; border-radius: 8px; display: block;" />
+          </a>
+          <div style="margin-top: 12px;">
+            <a href="${watchUrl}" target="_blank" style="display: inline-block; background-color: #dc2626; color: #ffffff; font-weight: 600; font-size: 15px; padding: 10px 24px; border-radius: 6px; text-decoration: none;">&#9654; Watch on YouTube</a>
+          </div>
+        </div>`;
+      $(el).parent().length ? $(el).replaceWith(fallback) : $(el).replaceWith(fallback);
+    }
+  });
+
+  // Step 8: Remove remaining elements that don't work in email
   article.find('script').remove();
   article.find('noscript').remove();
   article.find('iframe').remove();
   article.find('video').remove();
   article.find('audio').remove();
   
-  // Step 8: Remove SVGs (replace with alt text or remove)
+  // Step 9: Remove SVGs (replace with alt text or remove)
   article.find('svg').each((i, el) => {
     $(el).remove();
   });
   
-  // Step 9: Clean up any remaining class attributes (optional, keeps HTML cleaner)
+  // Step 10: Clean up any remaining class attributes (optional, keeps HTML cleaner)
   // We keep them for now in case some email clients use them
   
-  // Step 10: Get hero image
+  // Step 11: Get hero image
   const heroImg = article.find('img').first();
   const heroImage = heroImg.length ? heroImg.attr('src') : null;
   
