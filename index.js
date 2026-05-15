@@ -158,8 +158,38 @@ app.post('/github-webhook', async (req, res) => {
       console.log(`Queued article: ${articleFilename}`);
     }
     
-    res.status(200).send(`Queued ${newArticles.length} article(s). Waiting for Render deploy.`);
-    
+    res.status(200).send(`Queued ${newArticles.length} article(s). Processing after deploy.`);
+
+    // Wait for Render deploy to finish, then process queued articles
+    const DEPLOY_WAIT_MS = 3 * 60 * 1000; // 3 minutes
+    setTimeout(async () => {
+      try {
+        console.log('Deploy wait complete. Processing queued articles...');
+        const queuedSnapshot = await db.collection('queued_articles')
+          .where('status', '==', 'queued')
+          .get();
+
+        if (queuedSnapshot.empty) {
+          console.log('No queued articles to process');
+          return;
+        }
+
+        for (const doc of queuedSnapshot.docs) {
+          const { articlePath, articleFilename } = doc.data();
+          try {
+            await processArticle(articlePath, articleFilename);
+            await doc.ref.update({ status: 'processed', processedAt: admin.firestore.FieldValue.serverTimestamp() });
+            console.log(`Processed: ${articleFilename}`);
+          } catch (err) {
+            console.error(`Error processing ${articleFilename}:`, err.message);
+            await doc.ref.update({ status: 'error', error: err.message });
+          }
+        }
+      } catch (err) {
+        console.error('Post-deploy processing error:', err);
+      }
+    }, DEPLOY_WAIT_MS);
+
   } catch (error) {
     console.error('GitHub webhook error:', error);
     res.status(500).send('Internal error');
