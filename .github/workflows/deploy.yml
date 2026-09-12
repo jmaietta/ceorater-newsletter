@@ -1,0 +1,58 @@
+name: Deploy to Cloud Run
+
+# Every push to main deploys. This replaced a Cloud Build trigger that had
+# silently stopped working: its GitHub webhook was gone from the repo, so
+# GitHub never told Cloud Build about a push and the service sat on
+# February's code for seven months while pushes appeared to succeed.
+#
+# Auth is Workload Identity Federation -- GitHub proves its identity to
+# Google directly and no key is stored in this repo. The provider is pinned
+# to this repository, so a token minted by any other repo is refused.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write      # required to mint the OIDC token for WIF
+
+concurrency:
+  group: deploy-newsletter
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ceorater-newsletter
+  REGION: us-east4
+  SERVICE: ceorater-newsletter
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/932618889214/locations/global/workloadIdentityPools/github/providers/ceorater-newsletter
+          service_account: gha-deployer@ceorater-newsletter.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --source . \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --service-account 932618889214-compute@developer.gserviceaccount.com \
+            --quiet
+
+      - name: Report the serving revision
+        run: |
+          gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format="value(status.latestReadyRevisionName,status.url)"
