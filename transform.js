@@ -102,6 +102,84 @@ function transformArticle(html, articlePath) {
     $(el).remove();
   });
   
+  // Step 9b: Put the article on an email palette.
+  //
+  // juice() above inlines every rule from the page, and ceorater.com is a dark
+  // theme: finance-fix sets `h1,h2,h3,h4,h5 { color:#fff !important }`, body
+  // text to #e8e6df, panels to near-black. Those land inside the white content
+  // cell in email-template.html -- white text on white, and the headings vanish.
+  //
+  // Setting a colour on the container cannot fix it, because each element now
+  // carries its own inline `color` that wins. The styles have to be rewritten
+  // on the elements themselves.
+  //
+  // Colour is remapped rather than stripped: amber section headers and the
+  // green/red of a positive or negative return carry meaning. Only values that
+  // assume a black background are changed.
+  const DARK_TO_EMAIL = [
+    [/^#fff(fff)?$/i, '#1a1a1a'],
+    [/^#e8e6df$/i, '#1a1a1a'],
+    [/^#8a8878$/i, '#6b7280'],
+    [/^#9a9788$/i, '#6b7280'],
+    [/^#b9b6aa$/i, '#4b5563'],
+    [/^#ff9f1c$/i, '#b45309'],   // amber on white is ~1.9:1, unreadable
+    [/^#b97a14$/i, '#92400e'],
+    [/^#fbbf24$/i, '#b45309'],
+    [/^#2fd47f$/i, '#047857'],
+    [/^#ff4d42$/i, '#b91c1c'],
+    [/^#38c8d8$/i, '#0e7490'],
+  ];
+  const DARK_BACKGROUNDS = /^#(000|000000|070705|0c0c09|14130b|1a1408)$/i;
+  const DARK_BORDERS = /^#(1c1b14|2a291f|3a382e|36342b)$/i;
+
+  // .code-block is a dark panel with light text by design and reads correctly
+  // in email as-is, so it is left alone.
+  const inCodeBlock = (el) => $(el).closest('pre, code, .code-block').length > 0;
+
+  const remap = (value, table) => {
+    for (const [pattern, replacement] of table) {
+      if (pattern.test(value)) return replacement;
+    }
+    return null;
+  };
+
+  article.find('*').each((i, el) => {
+    if (inCodeBlock(el)) return;
+    const style = $(el).attr('style');
+    if (!style) return;
+
+    const rewritten = style.split(';').map((decl) => {
+      const idx = decl.indexOf(':');
+      if (idx === -1) return decl;
+      const prop = decl.slice(0, idx).trim().toLowerCase();
+      const val = decl.slice(idx + 1).trim();
+      const bang = /!important$/i.test(val);
+      const bare = val.replace(/!important$/i, '').trim();
+
+      let next = null;
+      if (prop === 'color') {
+        next = remap(bare, DARK_TO_EMAIL);
+      } else if (prop === 'background' || prop === 'background-color') {
+        if (DARK_BACKGROUNDS.test(bare)) next = '#f9fafb';
+      } else if (prop.indexOf('border') === 0 && DARK_BORDERS.test(bare)) {
+        next = '#e5e7eb';
+      }
+      if (next === null) return decl;
+      return ' ' + prop + ': ' + next + (bang ? ' !important' : '');
+    }).join(';');
+
+    $(el).attr('style', rewritten);
+  });
+
+  // Backstop: a heading that arrived with no colour of its own must read as
+  // black rather than whatever the client decides.
+  article.find('h1, h2, h3, h4, h5, h6').each((i, el) => {
+    const style = $(el).attr('style') || '';
+    if (!/(^|;)\s*color\s*:/i.test(style)) {
+      $(el).attr('style', (style + ';color:#1a1a1a').replace(/^;/, ''));
+    }
+  });
+
   // Step 10: Clean up any remaining class attributes (optional, keeps HTML cleaner)
   // We keep them for now in case some email clients use them
   
