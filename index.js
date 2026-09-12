@@ -336,6 +336,67 @@ async function processArticle(articlePath, articleFilename) {
 // ============================================================
 
 /**
+ * POST /resend - regenerate the preview for one article.
+ *
+ * The queue only ever fills from a file appearing in a push's `added` list, so a
+ * preview could be produced exactly once per article, ever. When one came out
+ * wrong -- the site's dark theme inlined white headings into the email's white
+ * content cell, so every heading was invisible -- there was no way to get a
+ * corrected proof without inventing a commit to re-add the file. Owning the
+ * newsletter should not mean fighting the tooling to see your own article.
+ *
+ * Regenerates from the live page, so it always reflects what is deployed right
+ * now rather than whatever was stored when the first preview ran. Refuses an
+ * article already sent to subscribers -- that is what /approve is for, and
+ * resending would mean a second delivery to everyone.
+ *
+ * Body or query: { articlePath: "news/example.html" }
+ * Auth: the same x-render-secret the deploy webhook uses.
+ */
+app.post('/resend', async (req, res) => {
+  try {
+    const secret = req.headers['x-render-secret'] || (req.query && req.query.secret);
+    if (!verifyRenderSecret(secret)) {
+      return res.status(401).json({ error: 'Invalid secret' });
+    }
+
+    const articlePath = (req.body && req.body.articlePath) || (req.query && req.query.articlePath);
+    if (!articlePath || typeof articlePath !== 'string') {
+      return res.status(400).json({ error: 'articlePath is required, e.g. news/example.html' });
+    }
+    // Only ever a news article on this site, and never a traversal.
+    if (!/^news\/[A-Za-z0-9._-]+\.html$/.test(articlePath) || articlePath.includes('..')) {
+      return res.status(400).json({ error: 'articlePath must look like news/example.html' });
+    }
+    if (articlePath === 'news/index.html') {
+      return res.status(400).json({ error: 'news/index.html is the listing page, not an article' });
+    }
+
+    const articleFilename = path.basename(articlePath);
+
+    const sentDoc = await db.collection('sent_articles').doc(articleFilename).get();
+    if (sentDoc.exists && sentDoc.data().status === 'sent') {
+      return res.status(409).json({
+        error: 'Already sent to subscribers. Resending would deliver it twice.',
+        articleFilename
+      });
+    }
+
+    console.log(`Resend requested for ${articlePath}`);
+    await processArticle(articlePath, articleFilename);
+
+    return res.status(200).json({
+      ok: true,
+      articlePath,
+      message: `Preview regenerated and sent to ${ADMIN_EMAIL}.`
+    });
+  } catch (error) {
+    console.error('Resend error:', error);
+    return res.status(500).json({ error: String(error && error.message || error) });
+  }
+});
+
+/**
  * GET /approve - Approve and send to all subscribers
  */
 app.get('/approve', async (req, res) => {
