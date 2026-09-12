@@ -18,10 +18,29 @@ const BASE_URL = 'https://www.ceorater.com';
  */
 function transformArticle(html, articlePath) {
   
-  // Step 1: Extract title before any processing
+  // Step 1: Work out the subject line.
+  //
+  // The <title> is written for a browser tab, not an inbox: the old code
+  // produced "Open Data | CEORater News", because its strip only matched
+  // "| CEORater" at the very end and this title ends in "News". A subject
+  // line is the one thing a reader sees before deciding whether to open, so
+  // it gets its own cascade and an explicit per-article override.
+  //
+  //   1. <meta name="email-subject">  -- set per article, wins outright
+  //   2. <meta property="og:title">   -- already written for sharing
+  //   3. <h1>                         -- the headline the reader sees
+  //   4. <title>                      -- last resort, suffix stripped
   let $ = cheerio.load(html);
-  let title = $('title').text().trim();
-  title = title.replace(/\s*\|\s*CEORater\s*$/, '');
+  const cleanTitle = (t) => (t || '')
+    .replace(/\s*[|–—-]\s*CEORater(\s+News)?\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let title =
+    cleanTitle($('meta[name="email-subject"]').attr('content')) ||
+    cleanTitle($('meta[property="og:title"]').attr('content')) ||
+    cleanTitle($('h1').first().text()) ||
+    cleanTitle($('title').text());
   
   // Step 2: Use juice to inline ALL CSS from <style> blocks
   // This handles all your custom classes like .key-insight, .highlight-box, etc.
@@ -229,7 +248,12 @@ function resolveUrl(url, articleDir) {
  * Extract subject line from title
  */
 function extractSubject(title) {
-  return title.replace(/\s*\|\s*CEORater\s*$/, '').trim();
+  // transformArticle already resolved and cleaned this; the strip is kept
+  // for any caller passing a raw <title> straight in.
+  return (title || '')
+    .replace(/\s*[|–—-]\s*CEORater(\s+News)?\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 module.exports = {
